@@ -1,37 +1,32 @@
 <?php
+require_once __DIR__ . '/../../vendor/autoload.php';
+use App\Domain\ValueObject\Email;
+use App\Domain\ValueObject\InputPassword;
+use App\UseCase\UseCaseInput\SignInInput;
+use App\UseCase\UseCaseInteractor\SignInInteractor;
+
+session_start();
 $email = filter_input(INPUT_POST, 'email');
 $password = filter_input(INPUT_POST, 'password');
 
-session_start();
-$_SESSION['email'] = $email;
+try {
+    if (empty($email) || empty($password)) {
+        throw new Exception('パスワードとメールアドレスを入力してください');
+    }
 
-if (empty($email) || empty($password)) {
-    $_SESSION['errors'] = 'パスワードとメールアドレスを入力してください';
+    $userEmail = new Email($email);
+    $inputPassword = new InputPassword($password);
+    $useCaseInput = new SignInInput($userEmail, $inputPassword);
+    $useCase = new SignInInteractor($useCaseInput);
+    $useCaseOutput = $useCase->handler();
+
+    if (!$useCaseOutput->isSuccess()) {
+        throw new Exception($useCaseOutput->message());
+    }
+    header('Location: ../index.php');
+    exit();
+} catch (Exception $e) {
+    $_SESSION['errors'][] = $e->getMessage();
     header('Location: ./signin.php');
     exit();
 }
-
-$dbUserName = 'root';
-$dbPassword = 'password';
-$pdo = new PDO(
-    'mysql:host=mysql; dbname=blog; charset=utf8',
-    $dbUserName,
-    $dbPassword
-);
-
-$sql = 'select * from users where email = :email';
-$statement = $pdo->prepare($sql);
-$statement->bindValue(':email', $email, PDO::PARAM_STR);
-$statement->execute();
-$user = $statement->fetch(PDO::FETCH_ASSOC);
-
-if (!password_verify($password, $user['password'])) {
-    $_SESSION['errors'] = 'メールアドレスまたはパスワードが違います';
-    header('Location: ./signin.php');
-    exit();
-}
-
-$_SESSION['id'] = $user['id'];
-$_SESSION['userName'] = $user['name'];
-header('Location: ../index.php');
-exit();

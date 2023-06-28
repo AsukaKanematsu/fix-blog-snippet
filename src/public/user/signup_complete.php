@@ -1,61 +1,41 @@
 <?php
+require_once __DIR__ . '/../../vendor/autoload.php';
+use App\Infrastructure\Redirect\Redirect;
+use App\Domain\ValueObject\User\UserName;
+use App\Domain\ValueObject\Email;
+use App\Domain\ValueObject\InputPassword;
+use App\UseCase\UseCaseInput\SignUpInput;
+use App\UseCase\UseCaseInteractor\SignUpInteractor;
 
-$userName = filter_input(INPUT_POST, 'userName');
+$name = filter_input(INPUT_POST, 'name');
 $email = filter_input(INPUT_POST, 'email');
 $password = filter_input(INPUT_POST, 'password');
 $confirmPassword = filter_input(INPUT_POST, 'confirmPassword');
 
-session_start();
-$_SESSION['userName'] = $userName;
-$_SESSION['email'] = $email;
+try {
+    session_start();
+    if (empty($password) || empty($confirmPassword)) {
+        throw new Exception('パスワードを入力してください');
+    }
+    if ($password !== $confirmPassword) {
+        throw new Exception('パスワードが一致しません');
+    }
 
-if (
-    empty($userName) ||
-    empty($email) ||
-    empty($password) ||
-    empty($confirmPassword)
-) {
-    $_SESSION['errors'][] = 'UserNameかEmailかPasswordの入力がありません';
-    header('Location: ./signup.php');
-    exit();
+    $userName = new UserName($name);
+    $userEmail = new Email($email);
+    $userPassword = new InputPassword($password);
+    $useCaseInput = new SignUpInput($userName, $userEmail, $userPassword);
+    $useCase = new SignUpInteractor($useCaseInput);
+    $useCaseOutput = $useCase->handler();
+
+    if (!$useCaseOutput->isSuccess()) {
+        throw new Exception($useCaseOutput->message());
+    }
+    $_SESSION['message'] = $useCaseOutput->message();
+    Redirect::handler('./signin.php');
+} catch (Exception $e) {
+    $_SESSION['errors'][] = $e->getMessage();
+    $_SESSION['user']['name'] = $name;
+    $_SESSION['user']['email'] = $email;
+    Redirect::handler('./signup.php');
 }
-
-if ($password !== $confirmPassword) {
-    $_SESSION['errors'][] = 'パスワードが一致しません';
-    header('Location: ./signup.php');
-    exit();
-}
-
-$dbUserName = 'root';
-$dbPassword = 'password';
-$pdo = new PDO(
-    'mysql:host=mysql; dbname=blog; charset=utf8',
-    $dbUserName,
-    $dbPassword
-);
-
-$sql = 'select * from users where email=:email';
-$statement = $pdo->prepare($sql);
-$statement->bindValue(':email', $email, PDO::PARAM_STR);
-$statement->execute();
-$user = $statement->fetch();
-
-if ($user) {
-    $_SESSION['errors'][] = 'すでに登録済みのメールアドレスです';
-    header('Location: ./signup.php');
-    exit();
-}
-
-$hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-
-$sql =
-    'INSERT INTO `users`(`name`, `email`, `password`) VALUES (:userName, :email, :password)';
-$statement = $pdo->prepare($sql);
-$statement->bindValue(':userName', $userName, PDO::PARAM_STR);
-$statement->bindValue(':email', $email, PDO::PARAM_STR);
-$statement->bindValue(':password', $hashedPassword, PDO::PARAM_STR);
-$statement->execute();
-
-$_SESSION['registed'] = '登録できました。';
-header('Location: ./signin.php');
-exit();
